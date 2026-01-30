@@ -1,179 +1,144 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+from sqlalchemy.orm import Session
+import models, database, initial_data
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import os
 
 app = FastAPI()
 
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Data Models ---
+# --- Database Startup & Seeding ---
+@app.on_event("startup")
+def startup_event():
+    # Create tables
+    models.Base.metadata.create_all(bind=database.engine)
+    
+    # Check if data exists, if not, seed it
+    db = database.SessionLocal()
+    try:
+        if not db.query(models.Profile).first():
+            # Seed Profile
+            img_data = initial_data.profile_data
+            profile = models.Profile(
+                name=img_data["name"], 
+                role=img_data["role"], 
+                summary=img_data["summary"],
+                contact=img_data["contact"]
+            )
+            db.add(profile)
+            
+            # Seed Experiences
+            for exp in initial_data.experiences:
+                db.add(models.Experience(**exp))
+                
+            # Seed Skills
+            for sk in initial_data.skills:
+                db.add(models.Skill(**sk))
+                
+            # Seed Education
+            for edu in initial_data.education:
+                db.add(models.Education(**edu))
+                
+            # Seed Projects
+            for proj in initial_data.projects:
+                db.add(models.Project(**proj))
+                
+            db.commit()
+            print("Database seeded successfully!")
+    finally:
+        db.close()
+
+# --- Pydantic Models for Response (Schemas) ---
 class Experience(BaseModel):
     id: int
     title: str
     company: str
     period: str
     description: List[str]
+    
+    class Config:
+        from_attributes = True
 
 class Skill(BaseModel):
     name: str
-    level: str  # e.g., "Expert", "Advanced"
+    level: str
+    
+    class Config:
+        from_attributes = True
 
 class Profile(BaseModel):
     name: str
     role: str
     summary: str
     contact: dict
+    
+    class Config:
+        from_attributes = True
+        
+class Education(BaseModel):
+    degree: str
+    institution: str
+    period: str
+    details: str
+    
+    class Config:
+        from_attributes = True
+        
+class Project(BaseModel):
+    title: str
+    tech: str
+    description: str
+    
+    class Config:
+        orm_mode = True
 
-# --- Mock Data Based on Resume ---
-experiences = [
-    {
-        "id": 1,
-        "title": "Python Developer",
-        "company": "TiMadIT Solutions",
-        "period": "01/2025 - Present",
-        "description": [
-            "Developed and maintained scalable Python web applications.",
-            "Led design and development of RESTful APIs using Django and DRF.",
-            "Managed databases (MySQL, PostgreSQL) and optimized queries.",
-            "Implemented authentication (JWT) and integrated React components."
-        ]
-    },
-    {
-        "id": 2,
-        "title": "Python Intern",
-        "company": "ExcellentMinds",
-        "period": "10/2024 - 12/2024",
-        "description": [
-            "Developed python web applications and collaborated with teams.",
-            "Assisted in creating RESTful APIs using Django.",
-            "Conducted code reviews and wrote unit tests."
-        ]
-    }
-]
+# --- Chat Logic Setup ---
+# We keep knowledge_base in memory for the vectorizer as it's small and meant for the AI Logic
+# If desired, this could also be moved to DB, but TfidfVectorizer needs a list of strings anyway.
+vectorizer = TfidfVectorizer().fit(initial_data.knowledge_base)
+vectors = vectorizer.transform(initial_data.knowledge_base)
 
-skills = [
-    {"name": "Python", "level": "Expert"},
-    {"name": "Django", "level": "Advanced"},
-    {"name": "FastAPI", "level": "Advanced"},
-    {"name": "React", "level": "Intermediate"},
-    {"name": "PostgreSQL", "level": "Advanced"},
-    {"name": "Docker", "level": "Intermediate"},
-    {"name": "AWS", "level": "Beginner"}
-]
-
-education = [
-    {
-        "degree": "PGDAC",
-        "institution": "CDAC, Noida",
-        "period": "03/2023 - 02/2024",
-        "details": "Post Graduate Diploma in Advanced Computing"
-    },
-    {
-        "degree": "B.Tech in Computer Science",
-        "institution": "Sandip Institute of Technology and Research Centre",
-        "period": "12/2020 - 07/2023",
-        "details": "Nashik, Maharashtra"
-    },
-    {
-        "degree": "Diploma in Electrical Engineering",
-        "institution": "MET, Bhujbal Knowledge City",
-        "period": "06/2012 - 05/2018",
-        "details": "Nashik, Maharashtra"
-    }
-]
-
-projects = [
-    {
-        "title": "Logbook System",
-        "tech": "Django, React, PostgreSQL",
-        "description": "Digital logbook to eliminate paperwork, managing shift data, work tracking, and reviewer/approver workflows."
-    },
-    {
-        "title": "Asset Track",
-        "tech": "FastAPI, React Native, QR Code",
-        "description": "Mobile-first asset tracking solution using QR codes for real-time inventory management and auditing."
-    }
-]
-
-profile_data = {
-    "name": "Shubham Bharambe",
-    "role": "Python Full-Stack Developer",
-    "summary": "Results-oriented Python Full-Stack Developer with 1+ year of experience in Django, FastAPI, React, and React Native. Expert in API development, database design, and performance optimization.",
-    "contact": {
-        "email": "shubhambharambe15@gmail.com",
-        "phone": "9011311270",
-        "linkedin": "linkedin.com/in/shubham-bharambe-203153137",
-        "location": "Pune, India 411027"
-    }
-}
-
-# --- Detailed Resume Data for Chat ---
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-
-# --- AI Knowledge Base (Granular Facts) ---
-knowledge_base = [
-    "I am Shubham Bharambe, a Python Full-Stack Developer.",
-    "I have over 1 year of experience in developing scalable web and mobile solutions.",
-    "My tech stack includes Python, Django, FastAPI, React, and React Native.",
-    "I am currently working as a Python Developer at TiMadIT Solutions (Jan 2025 - Present).",
-    "At TiMadIT, I develop RESTful APIs with Django DRF and optimize PostgreSQL queries.",
-    "I worked as a Python Intern at ExcellentMinds (Oct 2024 - Dec 2024).",
-    "I completed my PGDAC from CDAC Noida in 2024.",
-    "I hold a B.Tech in Computer Science from Sandip Institute (2023).",
-    "I have a Diploma in Electrical Engineering from MET Bhujbal Knowledge City (2018).",
-    "My key projects include a Logbook System (Django/React) for shift tracking.",
-    "I built an Asset Track system using FastAPI and React Native with QR code integration.",
-    "I am expert in API development, database design, and performance optimization.",
-    "You can contact me at shubhambharambe15@gmail.com.",
-    "My phone number is 9011311270.",
-    "I live in Pune, India.",
-    "My skills include Python, OOP, Numpy, Pandas, Django, REST, SQL, Git, and Linux.",
-    "I am passionate about building user-focused applications and learning new tech.",
-    "Hello! I am an AI assistant trained on Shubham's resume. Ask me anything!"
-]
-
-# Train the "Brain"
-vectorizer = TfidfVectorizer().fit(knowledge_base)
-vectors = vectorizer.transform(knowledge_base)
+class ChatRequest(BaseModel):
+    message: str
 
 # --- Endpoints ---
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to Shubham's Smart Portfolio API"}
+    return {"message": "Welcome to Shubham's Smart Portfolio API (DB Connected!)"}
 
 @app.get("/api/profile", response_model=Profile)
-def get_profile():
-    return profile_data
+def get_profile(db: Session = Depends(database.get_db)):
+    return db.query(models.Profile).first()
 
 @app.get("/api/experience", response_model=List[Experience])
-def get_experience():
-    return experiences
+def get_experience(db: Session = Depends(database.get_db)):
+    return db.query(models.Experience).all()
 
 @app.get("/api/skills", response_model=List[Skill])
-def get_skills():
-    return skills
+def get_skills(db: Session = Depends(database.get_db)):
+    return db.query(models.Skill).all()
 
-@app.get("/api/education")
-def get_education():
-    return education
+@app.get("/api/education", response_model=List[Education])
+def get_education(db: Session = Depends(database.get_db)):
+    return db.query(models.Education).all()
 
-@app.get("/api/projects")
-def get_projects():
-    return projects
-
-class ChatRequest(BaseModel):
-    message: str
+@app.get("/api/projects", response_model=List[Project])
+def get_projects(db: Session = Depends(database.get_db)):
+    return db.query(models.Project).all()
 
 @app.post("/api/chat")
 def chat_with_me(request: ChatRequest):
@@ -191,7 +156,7 @@ def chat_with_me(request: ChatRequest):
     if best_score < 0.1:
         return {"response": "That's a great question! I'm mostly trained on Shubham's professional background. Try asking about his projects, experience, or skills."}
     
-    return {"response": knowledge_base[best_index]}
+    return {"response": initial_data.knowledge_base[best_index]}
 
 if __name__ == "__main__":
     import uvicorn
