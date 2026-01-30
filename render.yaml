@@ -1,0 +1,34 @@
+services:
+  # Python Backend (Docker)
+  - type: web
+    name: portfolio-backend
+    env: docker
+    dockerFilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: portfolio-db
+          property: connectionString
+      - key: PORT
+        value: 8000
+
+  # React Frontend (Static Site - Recommended for Free Hosting)
+  - type: static
+    name: portfolio-frontend
+    env: node
+    buildCommand: cd frontend && npm install && npm run build
+    publishDir: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: portfolio-backend
+          property: onRenderURL
+
+databases:
+  - name: portfolio-db
+    plan: free
+    databaseName: portfolio_db
+    user: postgres
