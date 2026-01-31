@@ -12,9 +12,20 @@ import os
 app = FastAPI()
 
 # Enable CORS
+origins = [
+    "http://localhost",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "http://localhost:8082",
+    "https://portfolio-nrpg.onrender.com",
+    "https://portfoli-m4x7.onrender.com",
+    "*"
+]
+
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
