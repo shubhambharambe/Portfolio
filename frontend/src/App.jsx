@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import axios from "axios";
-
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+import api from "./api";
 import Hero from "./components/Hero";
 import Experience from "./components/Experience";
 import Education from "./components/Education";
@@ -25,11 +23,11 @@ function App() {
     const fetchData = async () => {
       try {
         const [profileRes, expRes, eduRes, projRes, skillsRes] = await Promise.all([
-          axios.get(`${API_URL}/api/profile`),
-          axios.get(`${API_URL}/api/experience`),
-          axios.get(`${API_URL}/api/education`),
-          axios.get(`${API_URL}/api/projects`),
-          axios.get(`${API_URL}/api/skills`)
+          api.get("/api/profile"),
+          api.get("/api/experience"),
+          api.get("/api/education"),
+          api.get("/api/projects"),
+          api.get("/api/skills")
         ]);
 
         setData({

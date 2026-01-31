@@ -1,9 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import axios from "axios";
+import api from "../api";
 import { motion, AnimatePresence } from "framer-motion";
 import { FaRobot, FaUser, FaPaperPlane } from "react-icons/fa";
-
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 const SmartChat = () => {
     const [messages, setMessages] = useState([
@@ -34,8 +32,7 @@ const SmartChat = () => {
         setLoading(true);
 
         try {
-            // Updated URL to point to backend port 8001
-            const response = await axios.post(`${API_URL}/api/chat`, { message: input });
+            const response = await api.post("/api/chat", { message: input });
             const botMsg = { role: "bot", content: response.data.response };
             setMessages((prev) => [...prev, botMsg]);
         } catch (error) {
